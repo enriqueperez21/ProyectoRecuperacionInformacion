@@ -8,32 +8,40 @@ DATA_DIR = Path(__file__).parent / "data"
 
 def _parse_topics(raw: str) -> list[str]:
     """
-    Limpia el campo topics que puede venir en varios formatos raros:
-        "['cocoa']"     → ['cocoa']
-        "cocoa,trade"   → ['cocoa', 'trade']
-        "['cocoa', 'trade']" → ['cocoa', 'trade']
+    Limpia el campo topics que puede venir en varios formatos:
+
+        "['cocoa']"                    → ['cocoa']           lista Python 1 elemento
+        "['cocoa', 'trade']"           → ['cocoa', 'trade']  lista Python con comas
+        "['grain' 'wheat' 'corn']"     → ['grain', 'wheat', 'corn']  array NumPy (espacios)
+        "cocoa,trade"                  → ['cocoa', 'trade']  separado por comas
     """
     raw = raw.strip()
     if not raw or raw == "nan":
         return []
 
-    # Intentar parsear como lista de Python
-    try:
-        parsed = ast.literal_eval(raw)
-        if isinstance(parsed, list):
-            # Puede ser lista de strings o lista de listas
-            result = []
-            for item in parsed:
-                if isinstance(item, list):
-                    result.extend([str(i).strip() for i in item if str(i).strip()])
-                else:
-                    result.append(str(item).strip())
-            return [t for t in result if t]
-    except Exception:
-        pass
+    # Caso: viene entre corchetes — puede ser lista Python o array NumPy
+    if raw.startswith("[") and raw.endswith("]"):
+        # Quitar corchetes y extraer todo lo que esté entre comillas simples
+        import re
+        tokens = re.findall(r"'([^']+)'", raw)
+        if tokens:
+            return [t.strip() for t in tokens if t.strip()]
 
-    # Si no es lista Python, asumir separado por comas
-    return [t.strip() for t in raw.split(",") if t.strip()]
+        # Si no hay comillas simples, intentar ast.literal_eval (lista Python normal)
+        try:
+            parsed = ast.literal_eval(raw)
+            if isinstance(parsed, list):
+                return [str(t).strip() for t in parsed if str(t).strip()]
+        except Exception:
+            pass
+
+    # Caso: separado por comas sin corchetes — "cocoa,trade"
+    if "," in raw:
+        return [t.strip().strip("'\"") for t in raw.split(",") if t.strip()]
+
+    # Caso: un solo topic sin formato especial — "cocoa"
+    cleaned = raw.strip("[]'\"")
+    return [cleaned] if cleaned else []
 
 
 def load_corpus(split: str = "train") -> dict[str, dict]:
